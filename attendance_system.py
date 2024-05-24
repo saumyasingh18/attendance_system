@@ -1,21 +1,26 @@
 from tkinter import *
 import cv2
 import face_recognition
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 import os
 from datetime import datetime
 import numpy as np
 from PIL import Image, ImageTk
+import pandas as pd
+
+
 class AttendanceSystem:
     def __init__(self, root):
         self.root = root
         self.root.title("Attendance System")
+        self.root.geometry("800x600+0+0")
         self.root.resizable(True, True)
         # Initialize variables
         self.cap = None
         self.encode_list_known = []
         self.person_names = []
         self.match_found = False
+        self.match_name = "UNKNOWN"
 
         self.frame = Frame(self.root, height=400, width=400, highlightthickness=5)
         self.frame.pack(side=TOP)
@@ -23,15 +28,54 @@ class AttendanceSystem:
         head.grid(row=0, column=0, columnspan=3)
         self.menu = Menu(self.frame)
         self.root.config(menu=self.menu)
-        self.menu.add_command(label="Check attendance", command=NONE)
+        self.menu.add_command(label="Check attendance", command=self.open_popup)
         self.start_button = Button(self.frame, text="Start Attendance", command=self.start_attendance)
         self.start_button.grid(row=2, column=0, columnspan=1)
-        self.mark_attendance_button = Button(self.frame, text="Mark Attendance", command=self.mark_attendance, state=DISABLED)
+        self.mark_attendance_button = Button(self.frame, text="Mark Attendance", command=self.mark_attendance,
+                                             state=DISABLED)
         self.mark_attendance_button.grid(row=2, column=1)
         self.stop_button = Button(self.frame, text="Stop Attendance", command=self.stop_attendance, state=DISABLED)
         self.stop_button.grid(row=2, column=3, columnspan=1, pady=5)
         self.camera_label = Label(self.frame, text="Camera")
         self.camera_label.grid(row=1, column=0, columnspan=3)
+        self.exit = Button(self.frame, text="Exit", command=lambda: self.root.destroy())
+        self.exit.grid(row=3, column=1, columnspan=3)
+
+    def open_popup(self):
+        # Create the popup window
+        popup = Toplevel()
+        popup.title("Check Attendance")
+
+        # Create a frame to hold the table
+        table_frame = Frame(popup)
+        table_frame.pack(padx=10, pady=10)
+        df = pd.read_csv("Attendance.csv")
+
+        # Define table data
+        data = df.values.tolist()
+
+        # Create a Treeview widget for the table
+        table = ttk.Treeview(table_frame, columns=("Name", "Time", "Date"), show="headings")
+        table.pack()
+
+        # Define column headings
+        table.heading("#0", text="ID")
+        table.heading("Name", text="Name")
+        table.heading("Time", text="Time")
+        table.heading("Date", text="Date")
+
+        # Set column widths
+        table.column("#0", width=25)
+        table.column("Name", width=150)
+        table.column("Time", width=200)
+        table.column("Date", width=75)
+
+        # Insert table data
+        for item in data:
+            table.insert("", "end", values=item)
+
+        # Run the main event loop for the popup
+        popup.mainloop()
 
     def load_images_and_encode(self, path):
         images = []
@@ -47,17 +91,18 @@ class AttendanceSystem:
             encode = face_recognition.face_encodings(img)[0]
             encode_list_known.append(encode)
         return encode_list_known, person_names
+
     def start_attendance(self):
 
         self.start_button.config(state=DISABLED)
-        self.mark_attendance_button.config(state=NORMAL)
+        self.mark_attendance_button.config(state=DISABLED)
         self.stop_button.config(state=NORMAL)
         if self.cap is None:
             self.cap = cv2.VideoCapture(0)
         self.encode_list_known, self.person_names = self.load_images_and_encode('images')
 
         while True:
-            ret, frame= self.cap.read()
+            ret, frame = self.cap.read()
             if ret:
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 frame = cv2.resize(frame, (640, 480))
@@ -72,18 +117,20 @@ class AttendanceSystem:
                     match_index = np.argmin(face_dis)
 
                     if matches[match_index]:
+                        self.mark_attendance_button.config(state=NORMAL)
                         self.match_found = True
-                        self.match_name = self.person_names[match_index].upper()
-
                         y1, x2, y2, x1 = face_loc
-                        y1, x2, y2, x1 = y1 * 4, x2 * 4, y2 * 4, x1 * 4
+                        y1, x2, y2, x1 = y1, x2, y2, x1
 
                         # Draw rectangle around the face
                         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
                         # Draw name below the face rectangle
-                        cv2.putText(frame, self.match_name, (x1 + 6, y2 + 30), cv2.FONT_HERSHEY_COMPLEX, 1, (255, 255, 255), 2)
+                        cv2.putText(frame, self.match_name, (x1 + 6, y2 + 30), cv2.FONT_HERSHEY_COMPLEX, 1,
+                                    (255, 255, 255), 2)
+                        self.frame = frame
                         self.mark_attendance_button.config(state=NORMAL)
+                        self.match_name = self.person_names[match_index].upper()
                     else:
                         self.match_found = False
                         self.mark_attendance_button.config(state=DISABLED)
@@ -96,6 +143,7 @@ class AttendanceSystem:
 
                 if cv2.waitKey(1) == 13:
                     break
+
     def mark_attendance(self):
         with open('Attendance.csv', 'a') as f:
             time_now = datetime.now()
@@ -112,7 +160,9 @@ class AttendanceSystem:
         self.start_button.config(state=NORMAL)
         self.stop_button.config(state=DISABLED)
         self.mark_attendance_button.config(state=DISABLED)
+
+
 if __name__ == "__main__":
-   root = Tk()
-   app = AttendanceSystem(root)
-   root.mainloop()
+    root = Tk()
+    app = AttendanceSystem(root)
+    root.mainloop()
